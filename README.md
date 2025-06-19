@@ -161,12 +161,4 @@ Contributions are welcome! If you’d like to contribute to Infinite Tic Tac Toe
 
 ---
 
-## License
-This project is open source and available under the MIT License. See the [LICENSE](LICENSE) file for more information.
-
----
-
-## Contact
-For questions or suggestions, please contact the maintainer via GitHub.
-
 Enjoy Infinite Tic Tac Toe and have fun gaming! 🚀🎉
