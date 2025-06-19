@@ -15,7 +15,8 @@ const io = new Server(server, {
 });
 
 const rooms = {};
-const gameStates = {}; 
+const gameStates = {};
+const socketToRoom = {};
 
 io.on('connection', socket => {
   console.log(`Connected: ${socket.id}`);
@@ -24,6 +25,7 @@ io.on('connection', socket => {
     const code = nanoid(6);
     socket.join(code);
     socket.symbol = 'X';
+    socketToRoom[socket.id] = code;
 
     gameStates[code] = {
       currentTurn: 'X',
@@ -41,6 +43,7 @@ io.on('connection', socket => {
     if (room && room.size === 1 && gameStates[code]) {
       socket.join(code);
       socket.symbol = 'O';
+      socketToRoom[socket.id] = code;
 
       gameStates[code].players.O = socket.id;
 
@@ -64,6 +67,7 @@ io.on('connection', socket => {
       rooms[found].push(socket);
       socket.join(found);
       socket.symbol = 'O';
+      socketToRoom[socket.id] = found;
 
       if (gameStates[found]) {
         gameStates[found].players.O = socket.id;
@@ -76,6 +80,7 @@ io.on('connection', socket => {
       rooms[code] = [socket];
       socket.join(code);
       socket.symbol = 'X';
+      socketToRoom[socket.id] = code;
 
       gameStates[code] = {
         currentTurn: 'X',
@@ -120,22 +125,37 @@ io.on('connection', socket => {
   socket.on('disconnect', () => {
     console.log(`Disconnected: ${socket.id}`);
 
+    const roomCode = socketToRoom[socket.id];
+
+    if (roomCode) {
+      socket.to(roomCode).emit('opponentLeft');
+
+      const gameState = gameStates[roomCode];
+      if (gameState) {
+        if (gameState.players.X === socket.id) {
+          gameState.players.X = null;
+        } else if (gameState.players.O === socket.id) {
+          gameState.players.O = null;
+        }
+
+        const room = io.sockets.adapter.rooms.get(roomCode);
+        if (!room || room.size === 0) {
+          delete gameStates[roomCode];
+        } else {
+          gameState.currentTurn = 'X';
+          gameState.players.O = null;
+        }
+      }
+    }
+
     for (const [code, sockets] of Object.entries(rooms)) {
       rooms[code] = sockets.filter(s => s !== socket);
       if (rooms[code].length === 0) {
         delete rooms[code];
-        delete gameStates[code]; 
       }
     }
 
-    for (const [code, gameState] of Object.entries(gameStates)) {
-      if (
-        gameState.players.X === socket.id ||
-        gameState.players.O === socket.id
-      ) {
-        delete gameStates[code];
-      }
-    }
+    delete socketToRoom[socket.id];
   });
 });
 
