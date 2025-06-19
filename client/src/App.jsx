@@ -432,6 +432,11 @@ export default function App() {
       setIsMyTurn(true);
     };
 
+    const handleKickAll = () => {
+      handleBack(); 
+      setNotification('A player disconnected. The room has been closed.');
+    };
+
     socket.on('roomCreated', handleRoomCreated);
     socket.on('bothJoined', handleBothJoined);
     socket.on('roomJoined', handleRoomJoined);
@@ -441,6 +446,7 @@ export default function App() {
     socket.on('errorMsg', handleErrorMsg);
     socket.on('restartGame', handleRestartGame);
     socket.on('opponentLeft', handleOpponentLeft); 
+    socket.on('kickAll', handleKickAll);
 
     return () => {
       socket.off('roomCreated', handleRoomCreated);
@@ -452,6 +458,7 @@ export default function App() {
       socket.off('errorMsg', handleErrorMsg);
       socket.off('restartGame', handleRestartGame);
       socket.off('opponentLeft', handleOpponentLeft); 
+      socket.off('kickAll', handleKickAll);
     };
   }, []);
 
