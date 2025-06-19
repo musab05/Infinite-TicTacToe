@@ -442,7 +442,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center text-white bg-zinc-900 p-6">
       {!mode && (
-        <div className="space-y-4">
+        <div className="space-y-4 space-x-4">
           <h1 className="text-4xl mb-6 text-cyan-400">Infinite Tic Tac Toe</h1>
           <button
             onClick={() => setMode('robot')}
