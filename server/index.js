@@ -128,24 +128,21 @@ io.on('connection', socket => {
     const roomCode = socketToRoom[socket.id];
 
     if (roomCode) {
-      socket.to(roomCode).emit('opponentLeft');
+      io.to(roomCode).emit('kickAll'); 
 
-      const gameState = gameStates[roomCode];
-      if (gameState) {
-        if (gameState.players.X === socket.id) {
-          gameState.players.X = null;
-        } else if (gameState.players.O === socket.id) {
-          gameState.players.O = null;
-        }
-
-        const room = io.sockets.adapter.rooms.get(roomCode);
-        if (!room || room.size === 0) {
-          delete gameStates[roomCode];
-        } else {
-          gameState.currentTurn = 'X';
-          gameState.players.O = null;
+      const room = io.sockets.adapter.rooms.get(roomCode);
+      if (room) {
+        for (const clientId of room) {
+          const clientSocket = io.sockets.sockets.get(clientId);
+          if (clientSocket) {
+            clientSocket.leave(roomCode);
+          }
+          delete socketToRoom[clientId];
         }
       }
+
+      delete gameStates[roomCode];
+      delete rooms[roomCode];
     }
 
     for (const [code, sockets] of Object.entries(rooms)) {
@@ -156,7 +153,7 @@ io.on('connection', socket => {
     }
 
     delete socketToRoom[socket.id];
-  });
+  });  
 });
 
 server.listen(4000, () => {
