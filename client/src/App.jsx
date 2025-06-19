@@ -85,8 +85,8 @@ export default function App() {
       const xCount = values.filter(v => v === 'X').length;
       const nullCount = values.filter(v => v === null).length;
 
-      if (oCount === 2 && nullCount === 1) score += 5; 
-      if (xCount === 2 && nullCount === 1) score -= 5; 
+      if (oCount === 2 && nullCount === 1) score += 5;
+      if (xCount === 2 && nullCount === 1) score -= 5;
       if (oCount === 1 && nullCount === 2) score += 1;
       if (xCount === 1 && nullCount === 2) score -= 1;
     });
@@ -154,9 +154,9 @@ export default function App() {
           alpha,
           beta
         );
-        maxEval = Math.max(maxEval, eval);
-        alpha = Math.max(alpha, eval);
-        if (beta <= alpha) break; 
+        maxEval = Math.max(maxEval, evaluation);
+        alpha = Math.max(alpha, evaluation);
+        if (beta <= alpha) break;
       }
       return maxEval;
     } else {
@@ -178,8 +178,8 @@ export default function App() {
           alpha,
           beta
         );
-        minEval = Math.min(minEval, eval);
-        beta = Math.min(beta, eval);
+        minEval = Math.min(minEval, evaluation);
+        beta = Math.min(beta, evaluation);
         if (beta <= alpha) break;
       }
       return minEval;
@@ -219,7 +219,7 @@ export default function App() {
       );
       if (checkWin(simulated.board, 'X')) {
         bestMove = index;
-        bestScore = 1000; 
+        bestScore = 1000;
       }
     }
 
@@ -347,6 +347,7 @@ export default function App() {
       setRoomCode(code);
       setWaiting(true);
       setIsMyTurn(true);
+      setGameStarted(false);
       setNotification(`Room ${code} created. Waiting for opponent...`);
     };
 
@@ -377,6 +378,7 @@ export default function App() {
       setSymbol(symbol);
       setRoomCode(code);
       setWaiting(true);
+      setGameStarted(false);
       setIsMyTurn(symbol === 'X');
       setNotification('Joined room. Waiting for game to start...');
     };
@@ -418,6 +420,18 @@ export default function App() {
       setIsMyTurn(currentTurn === symbolRef.current);
     };
 
+    const handleOpponentLeft = () => {
+      setGameStarted(false);
+      setWaiting(true);
+      setWinner(null);
+      setCountdown(null);
+      resetGame();
+      setNotification(`Opponent left the game. Waiting for new opponent...`);
+
+      setSymbol('X');
+      setIsMyTurn(true);
+    };
+
     socket.on('roomCreated', handleRoomCreated);
     socket.on('bothJoined', handleBothJoined);
     socket.on('roomJoined', handleRoomJoined);
@@ -426,6 +440,7 @@ export default function App() {
     socket.on('receiveMessage', handleReceiveMessage);
     socket.on('errorMsg', handleErrorMsg);
     socket.on('restartGame', handleRestartGame);
+    socket.on('opponentLeft', handleOpponentLeft); 
 
     return () => {
       socket.off('roomCreated', handleRoomCreated);
@@ -436,6 +451,7 @@ export default function App() {
       socket.off('receiveMessage', handleReceiveMessage);
       socket.off('errorMsg', handleErrorMsg);
       socket.off('restartGame', handleRestartGame);
+      socket.off('opponentLeft', handleOpponentLeft); 
     };
   }, []);
 
