@@ -66,6 +66,7 @@ export default function App() {
   const [symbol, setSymbol] = useState('X');
   const [isMyTurn, setIsMyTurn] = useState(true);
   const [winner, setWinner] = useState(null);
+  const [robotStarts, setRobotStarts] = useState(false);
 
   const [hintsEnabled, setHintsEnabled] = useState(false);
   const [currentHint, setCurrentHint] = useState(null);
@@ -109,8 +110,19 @@ export default function App() {
     setCountdown(null);
     setCurrentHint(null);
     setHintCount(0);
-
+  
     if (mode === 'online') {
+    } else if (mode === 'robot') {
+      const robotFirst = Math.random() < 0.5;
+      setRobotStarts(robotFirst);
+      setIsMyTurn(!robotFirst);
+      setSymbol('X');
+      
+      if (robotFirst) {
+        setMyMarks([]);
+        setOpponentMarks([]);
+        setTimeout(() => robotMove(getEmptyBoard(gridSize), []), 500);
+      }
     } else {
       setIsMyTurn(true);
       setSymbol('X');
@@ -419,33 +431,38 @@ export default function App() {
   const handleMove = index => {
     if (winner || board[index]) return;
     if (mode === 'online' && !isMyTurn) return;
-
+  
     setCurrentHint(null);
-
+  
     const newBoard = [...board];
     newBoard[index] = symbol;
-    let newMarks = [...myMarks, index];
-
+    
+    const currentPlayerMarks = symbol === 'X' ? [...myMarks, index] : [...opponentMarks, index];
     const wouldWin = checkWin(newBoard, symbol);
-
-    if (!wouldWin && newMarks.length > 3) {
-      const toRemove = newMarks.shift();
+  
+    if (!wouldWin && currentPlayerMarks.length > 3) {
+      const toRemove = currentPlayerMarks.shift();
       newBoard[toRemove] = null;
     }
-
+  
     if (checkWin(newBoard, symbol)) {
       setWinner(symbol);
       setNotification(`${symbol} Wins!`);
     }
-
+  
+    if (symbol === 'X') {
+      setMyMarks(currentPlayerMarks);
+    } else {
+      setOpponentMarks(currentPlayerMarks);
+    }
+  
     setBoard(newBoard);
-    setMyMarks(newMarks);
-
+  
     if (mode === 'robot' && !checkWin(newBoard, symbol)) {
       const delay = difficulty === 'extreme' ? 1000 : 500;
-      setTimeout(() => robotMove(newBoard, newMarks), delay);
+      setTimeout(() => robotMove(newBoard, symbol === 'X' ? currentPlayerMarks : myMarks), delay);
     } else if (mode === 'local') {
-      swapPlayers(newBoard, newMarks);
+      swapPlayers(newBoard, currentPlayerMarks);
     } else if (mode === 'online') {
       socket.emit('makeMove', { room: roomCode, index });
     }
@@ -460,21 +477,21 @@ export default function App() {
 
   const robotMove = (boardState, playerMarks) => {
     const bestMove = getBestMove(boardState, playerMarks, opponentMarks);
-
+  
     if (bestMove === null) return;
-
+  
     const newBoard = [...boardState];
     newBoard[bestMove] = 'O';
-
+  
     let newOppMarks = [...opponentMarks, bestMove];
-
+  
     const wouldWin = checkWin(newBoard, 'O');
-
+  
     if (!wouldWin && newOppMarks.length > 3) {
       const toRemove = newOppMarks.shift();
       newBoard[toRemove] = null;
     }
-
+  
     if (checkWin(newBoard, 'O')) {
       setWinner('O');
       const message =
@@ -483,7 +500,7 @@ export default function App() {
           : 'Robot Wins! 🤖';
       setNotification(message);
     }
-
+  
     setBoard(newBoard);
     setOpponentMarks(newOppMarks);
   };
@@ -811,19 +828,28 @@ export default function App() {
           </button>
 
           {notification && (
-            <div className="mt-4 text-yellow-300 text-center font-semibold">
-              {notification}
-              {countdown && ` (${countdown})`}
-            </div>
-          )}
-
+  <div className="mt-4 text-yellow-300 text-center font-semibold">
+    {notification}
+    {countdown && ` (${countdown})`}
+    {mode === 'robot' && !winner && !notification && (
+      <div className="text-sm text-gray-400">
+        {robotStarts ? "🤖 Robot starts first!" : "You start first!"}
+      </div>
+    )}
+  </div>
+)}
           {mode === 'robot' && (
-            <div className="mt-4 text-center">
-              <div className="text-sm text-gray-400 mb-2">
-                {difficulty === 'extreme'
-                  ? 'Extreme Robot: Advanced AI with deeper analysis 💀🤖'
-                  : 'Robot: Uses advanced AI strategies 🤖'}
-              </div>
+  <div className="mt-4 text-center">
+    <div className="text-sm text-gray-400 mb-2">
+      {difficulty === 'extreme'
+        ? 'Extreme Robot: Advanced AI with deeper analysis 💀🤖'
+        : 'Robot: Uses advanced AI strategies 🤖'}
+    </div>
+    <div className="text-sm text-gray-400">
+      {!winner && (
+        isMyTurn ? "Your turn (X)" : "🤖 Robot's turn (O)"
+      )}
+    </div>
 
               {/* Hints toggle and controls */}
               {/* <div className="flex items-center justify-center space-x-4 mb-2">
