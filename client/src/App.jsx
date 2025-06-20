@@ -56,7 +56,9 @@ export default function App() {
   const [mode, setMode] = useState(null);
   const [gridSize, setGridSize] = useState(3);
   const [showGridSelection, setShowGridSelection] = useState(false);
+  const [showDifficultySelection, setShowDifficultySelection] = useState(false);
   const [pendingMode, setPendingMode] = useState(null);
+  const [difficulty, setDifficulty] = useState('normal');
   const [board, setBoard] = useState([]);
   const [winCombos, setWinCombos] = useState([]);
   const [myMarks, setMyMarks] = useState([]);
@@ -64,6 +66,11 @@ export default function App() {
   const [symbol, setSymbol] = useState('X');
   const [isMyTurn, setIsMyTurn] = useState(true);
   const [winner, setWinner] = useState(null);
+
+  const [hintsEnabled, setHintsEnabled] = useState(false);
+  const [currentHint, setCurrentHint] = useState(null);
+  const [hintCount, setHintCount] = useState(0);
+  const [maxHints, setMaxHints] = useState(3);
 
   const [roomCode, setRoomCode] = useState('');
   const [inputRoom, setInputRoom] = useState('');
@@ -100,6 +107,8 @@ export default function App() {
     setWinner(null);
     setNotification('');
     setCountdown(null);
+    setCurrentHint(null);
+    setHintCount(0);
 
     if (mode === 'online') {
     } else {
@@ -114,16 +123,18 @@ export default function App() {
 
     let score = 0;
 
+    const multiplier = difficulty === 'extreme' ? 2 : 1;
+
     const centerIndices = gridSize === 3 ? [4] : [5, 6, 9, 10];
     centerIndices.forEach(i => {
-      if (board[i] === 'O') score += 3;
-      else if (board[i] === 'X') score -= 3;
+      if (board[i] === 'O') score += 3 * multiplier;
+      else if (board[i] === 'X') score -= 3 * multiplier;
     });
 
     const corners = gridSize === 3 ? [0, 2, 6, 8] : [0, 3, 12, 15];
     corners.forEach(i => {
-      if (board[i] === 'O') score += 2;
-      else if (board[i] === 'X') score -= 2;
+      if (board[i] === 'O') score += 2 * multiplier;
+      else if (board[i] === 'X') score -= 2 * multiplier;
     });
 
     winCombos.forEach(combo => {
@@ -133,11 +144,30 @@ export default function App() {
       const xCount = values.filter(v => v === 'X').length;
       const nullCount = values.filter(v => v === null).length;
 
-      if (oCount === 2 && nullCount === 1) score += 5;
-      if (xCount === 2 && nullCount === 1) score -= 5;
-      if (oCount === 1 && nullCount === 2) score += 1;
-      if (xCount === 1 && nullCount === 2) score -= 1;
+      if (oCount === 2 && nullCount === 1) score += 5 * multiplier;
+      if (xCount === 2 && nullCount === 1) score -= 5 * multiplier;
+      if (oCount === 1 && nullCount === 2) score += 1 * multiplier;
+      if (xCount === 1 && nullCount === 2) score -= 1 * multiplier;
     });
+
+    if (difficulty === 'extreme') {
+      const robotThreats = winCombos.filter(combo => {
+        const values = combo.map(i => board[i]);
+        const oCount = values.filter(v => v === 'O').length;
+        const nullCount = values.filter(v => v === null).length;
+        return oCount === 1 && nullCount === 2;
+      }).length;
+
+      const playerThreats = winCombos.filter(combo => {
+        const values = combo.map(i => board[i]);
+        const xCount = values.filter(v => v === 'X').length;
+        const nullCount = values.filter(v => v === null).length;
+        return xCount === 1 && nullCount === 2;
+      }).length;
+
+      score += robotThreats * 2;
+      score -= playerThreats * 2;
+    }
 
     return score;
   };
@@ -177,7 +207,9 @@ export default function App() {
 
     if (checkWin(board, 'O')) return 10 - depth;
     if (checkWin(board, 'X')) return depth - 10;
-    if (depth >= 6) return score;
+
+    const maxDepth = difficulty === 'extreme' ? 8 : 6;
+    if (depth >= maxDepth) return score;
 
     const availableMoves = board
       .map((cell, i) => (cell === null ? i : null))
@@ -302,9 +334,93 @@ export default function App() {
     return bestMove;
   };
 
+  const generateHint = () => {
+    if (hintCount >= maxHints) {
+      setNotification('No more hints available!');
+      return;
+    }
+
+    const availableMoves = board
+      .map((cell, i) => (cell === null ? i : null))
+      .filter(i => i !== null);
+
+    if (availableMoves.length === 0) return;
+
+    for (let index of availableMoves) {
+      const simulated = simulateMove(
+        board,
+        myMarks,
+        opponentMarks,
+        index,
+        false
+      );
+      if (checkWin(simulated.board, 'X')) {
+        setCurrentHint({ index, type: 'win', message: 'You can win here!' });
+        setHintCount(prev => prev + 1);
+        return;
+      }
+    }
+
+    for (let index of availableMoves) {
+      const simulated = simulateMove(
+        board,
+        myMarks,
+        opponentMarks,
+        index,
+        true
+      );
+      if (checkWin(simulated.board, 'O')) {
+        setCurrentHint({
+          index,
+          type: 'block',
+          message: 'Block the robot here!',
+        });
+        setHintCount(prev => prev + 1);
+        return;
+      }
+    }
+
+    let bestMove = availableMoves[0];
+    let bestScore = -Infinity;
+
+    for (let index of availableMoves) {
+      const simulated = simulateMove(
+        board,
+        myMarks,
+        opponentMarks,
+        index,
+        false
+      );
+      const score = evaluateBoard(
+        simulated.board,
+        [...myMarks, index],
+        opponentMarks,
+        false
+      );
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = index;
+      }
+    }
+
+    setCurrentHint({
+      index: bestMove,
+      type: 'strategic',
+      message: 'Good strategic move!',
+    });
+    setHintCount(prev => prev + 1);
+  };
+
+  const clearHint = () => {
+    setCurrentHint(null);
+  };
+
   const handleMove = index => {
     if (winner || board[index]) return;
     if (mode === 'online' && !isMyTurn) return;
+
+    setCurrentHint(null);
 
     const newBoard = [...board];
     newBoard[index] = symbol;
@@ -326,7 +442,8 @@ export default function App() {
     setMyMarks(newMarks);
 
     if (mode === 'robot' && !checkWin(newBoard, symbol)) {
-      setTimeout(() => robotMove(newBoard, newMarks), 500);
+      const delay = difficulty === 'extreme' ? 1000 : 500;
+      setTimeout(() => robotMove(newBoard, newMarks), delay);
     } else if (mode === 'local') {
       swapPlayers(newBoard, newMarks);
     } else if (mode === 'online') {
@@ -360,7 +477,11 @@ export default function App() {
 
     if (checkWin(newBoard, 'O')) {
       setWinner('O');
-      setNotification('Robot Wins! 🤖');
+      const message =
+        difficulty === 'extreme'
+          ? 'Extreme Robot Wins! 🤖💀'
+          : 'Robot Wins! 🤖';
+      setNotification(message);
     }
 
     setBoard(newBoard);
@@ -370,17 +491,32 @@ export default function App() {
   const handleModeSelection = selectedMode => {
     if (selectedMode === 'online') {
       setMode(selectedMode);
+    } else if (selectedMode === 'robot') {
+      setPendingMode(selectedMode);
+      setShowDifficultySelection(true);
     } else {
       setPendingMode(selectedMode);
       setShowGridSelection(true);
     }
   };
 
+  const handleDifficultySelection = selectedDifficulty => {
+    setDifficulty(selectedDifficulty);
+    setShowDifficultySelection(false);
+    setShowGridSelection(true);
+  };
+
   const handleGridSizeSelection = size => {
     setGridSize(size);
     setMode(pendingMode);
     setShowGridSelection(false);
+    setShowDifficultySelection(false);
     setPendingMode(null);
+
+    const baseHints = size === 3 ? 3 : 4;
+    setMaxHints(
+      difficulty === 'extreme' ? Math.floor(baseHints / 2) : baseHints
+    );
   };
 
   const handleBack = () => {
@@ -388,7 +524,9 @@ export default function App() {
     socket.connect();
     setMode(null);
     setShowGridSelection(false);
+    setShowDifficultySelection(false);
     setPendingMode(null);
+    setDifficulty('normal');
     resetGame();
     setRoomCode('');
     setInputRoom('');
@@ -396,6 +534,9 @@ export default function App() {
     setWaiting(false);
     setNotification('');
     setGameStarted(false);
+    setHintsEnabled(false);
+    setCurrentHint(null);
+    setHintCount(0);
   };
 
   const handleRestart = () => {
@@ -540,7 +681,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center text-white bg-zinc-900 p-6">
-      {!mode && !showGridSelection && (
+      {!mode && !showGridSelection && !showDifficultySelection && (
         <div className="space-y-4 space-x-4">
           <h1 className="text-4xl mb-6 text-cyan-400">Infinite Tic Tac Toe</h1>
           <button
@@ -561,6 +702,38 @@ export default function App() {
           >
             Play Online
           </button>
+        </div>
+      )}
+
+      {showDifficultySelection && (
+        <div className="space-y-4">
+          <button
+            onClick={handleBack}
+            className="absolute top-4 left-4 px-4 py-2 bg-gray-700 rounded hover:bg-gray-600 transition-colors"
+          >
+            ⬅ Back
+          </button>
+          <h2 className="text-3xl mb-6 text-cyan-400">Choose Difficulty</h2>
+          <div className="space-y-4 space-x-4">
+            <button
+              onClick={() => handleDifficultySelection('normal')}
+              className="px-6 py-3 bg-blue-500 text-white rounded w-64 hover:bg-blue-400 transition-colors font-semibold"
+            >
+              Normal 🤖
+            </button>
+            <button
+              onClick={() => handleDifficultySelection('extreme')}
+              className="px-6 py-3 bg-red-600 text-white rounded w-64 hover:bg-red-500 transition-colors font-semibold"
+            >
+              Extreme Hard 💀🤖
+            </button>
+          </div>
+          <p className="text-gray-400 text-sm mt-4 text-center max-w-md">
+            <strong>Normal:</strong> Smart AI with standard strategy
+            <br />
+            <strong>Extreme Hard:</strong> Advanced AI with deeper analysis,
+            fewer hints, and longer thinking time
+          </p>
         </div>
       )}
 
@@ -646,14 +819,66 @@ export default function App() {
 
           {mode === 'robot' && (
             <div className="mt-4 text-center">
-              <div className="text-sm text-gray-400">
-                The robot uses advanced AI strategies
+              <div className="text-sm text-gray-400 mb-2">
+                {difficulty === 'extreme'
+                  ? 'Extreme Robot: Advanced AI with deeper analysis 💀🤖'
+                  : 'Robot: Uses advanced AI strategies 🤖'}
               </div>
+
+              {/* Hints toggle and controls */}
+              {/* <div className="flex items-center justify-center space-x-4 mb-2">
+                <label className="flex items-center space-x-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={hintsEnabled}
+                    onChange={e => setHintsEnabled(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span>Enable Hints</span>
+                </label>
+
+                {hintsEnabled && (
+                  <div className="text-xs text-gray-400">
+                    Hints used: {hintCount}/{maxHints}
+                  </div>
+                )}
+              </div> */}
+
+              {hintsEnabled && (
+                <div className="flex justify-center space-x-2">
+                  <button
+                    onClick={generateHint}
+                    disabled={hintCount >= maxHints || !isMyTurn || winner}
+                    className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    💡 Get Hint
+                  </button>
+                  {currentHint && (
+                    <button
+                      onClick={clearHint}
+                      className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-400 transition-colors"
+                    >
+                      Clear Hint
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {currentHint && (
+                <div className="mt-2 p-2 bg-green-900/30 border border-green-500 rounded text-sm text-green-300">
+                  {currentHint.message}
+                </div>
+              )}
             </div>
           )}
 
           <div className="mt-4 text-center text-sm text-gray-400">
             {gridSize}x{gridSize} Grid - Get 3 in a row to win!
+            {mode === 'robot' && difficulty === 'extreme' && (
+              <div className="text-red-400 text-xs mt-1">
+                ⚠️ Extreme Mode: Robot thinks longer and plays optimally
+              </div>
+            )}
           </div>
 
           <div
@@ -670,6 +895,10 @@ export default function App() {
                   cell !== symbol &&
                   oppRemove === i &&
                   opponentMarks.length >= 3);
+
+              const isHinted = currentHint && currentHint.index === i;
+              const hintType = currentHint?.type;
+
               return (
                 <div
                   key={i}
@@ -681,6 +910,12 @@ export default function App() {
                   } rounded-md cursor-pointer transition-all ${
                     isRemove
                       ? 'animate-pulse border-pink-500 bg-pink-900/20'
+                      : isHinted
+                      ? hintType === 'win'
+                        ? 'border-green-400 bg-green-900/30 animate-pulse'
+                        : hintType === 'block'
+                        ? 'border-orange-400 bg-orange-900/30 animate-pulse'
+                        : 'border-blue-400 bg-blue-900/30 animate-pulse'
                       : 'border-cyan-400 hover:border-cyan-300 hover:bg-cyan-900/20'
                   } ${
                     cell === 'X'
@@ -695,6 +930,15 @@ export default function App() {
                   }`}
                 >
                   {cell}
+                  {isHinted && !cell && (
+                    <div className="absolute text-xs opacity-70">
+                      {hintType === 'win'
+                        ? '🎯'
+                        : hintType === 'block'
+                        ? '🛡️'
+                        : '⭐'}
+                    </div>
+                  )}
                 </div>
               );
             })}
