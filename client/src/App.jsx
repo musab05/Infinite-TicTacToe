@@ -4,21 +4,61 @@ import io from 'socket.io-client';
 const SOCKET_URL = 'http://localhost:4000';
 const socket = io(SOCKET_URL);
 
-const EMPTY_BOARD = Array(9).fill(null);
-const WIN_COMBOS = [
-  [0, 1, 2],
-  [3, 4, 5],
-  [6, 7, 8],
-  [0, 3, 6],
-  [1, 4, 7],
-  [2, 5, 8],
-  [0, 4, 8],
-  [2, 4, 6],
-];
+const getEmptyBoard = size => Array(size * size).fill(null);
+
+const getWinCombos = size => {
+  const combos = [];
+
+  for (let row = 0; row < size; row++) {
+    for (let col = 0; col <= size - 3; col++) {
+      combos.push([
+        row * size + col,
+        row * size + col + 1,
+        row * size + col + 2,
+      ]);
+    }
+  }
+
+  for (let col = 0; col < size; col++) {
+    for (let row = 0; row <= size - 3; row++) {
+      combos.push([
+        row * size + col,
+        (row + 1) * size + col,
+        (row + 2) * size + col,
+      ]);
+    }
+  }
+
+  for (let row = 0; row <= size - 3; row++) {
+    for (let col = 0; col <= size - 3; col++) {
+      combos.push([
+        row * size + col,
+        (row + 1) * size + col + 1,
+        (row + 2) * size + col + 2,
+      ]);
+    }
+  }
+
+  for (let row = 0; row <= size - 3; row++) {
+    for (let col = 2; col < size; col++) {
+      combos.push([
+        row * size + col,
+        (row + 1) * size + col - 1,
+        (row + 2) * size + col - 2,
+      ]);
+    }
+  }
+
+  return combos;
+};
 
 export default function App() {
   const [mode, setMode] = useState(null);
-  const [board, setBoard] = useState(EMPTY_BOARD);
+  const [gridSize, setGridSize] = useState(3);
+  const [showGridSelection, setShowGridSelection] = useState(false);
+  const [pendingMode, setPendingMode] = useState(null);
+  const [board, setBoard] = useState([]);
+  const [winCombos, setWinCombos] = useState([]);
   const [myMarks, setMyMarks] = useState([]);
   const [opponentMarks, setOpponentMarks] = useState([]);
   const [symbol, setSymbol] = useState('X');
@@ -45,11 +85,16 @@ export default function App() {
     symbolRef.current = symbol;
   }, [board, opponentMarks, symbol]);
 
+  useEffect(() => {
+    setBoard(getEmptyBoard(gridSize));
+    setWinCombos(getWinCombos(gridSize));
+  }, [gridSize]);
+
   const checkWin = (b, s) =>
-    WIN_COMBOS.some(combo => combo.every(i => b[i] === s));
+    winCombos.some(combo => combo.every(i => b[i] === s));
 
   const resetGame = () => {
-    setBoard(EMPTY_BOARD);
+    setBoard(getEmptyBoard(gridSize));
     setMyMarks([]);
     setOpponentMarks([]);
     setWinner(null);
@@ -69,16 +114,19 @@ export default function App() {
 
     let score = 0;
 
-    if (board[4] === 'O') score += 3;
-    else if (board[4] === 'X') score -= 3;
+    const centerIndices = gridSize === 3 ? [4] : [5, 6, 9, 10];
+    centerIndices.forEach(i => {
+      if (board[i] === 'O') score += 3;
+      else if (board[i] === 'X') score -= 3;
+    });
 
-    const corners = [0, 2, 6, 8];
+    const corners = gridSize === 3 ? [0, 2, 6, 8] : [0, 3, 12, 15];
     corners.forEach(i => {
       if (board[i] === 'O') score += 2;
       else if (board[i] === 'X') score -= 2;
     });
 
-    WIN_COMBOS.forEach(combo => {
+    winCombos.forEach(combo => {
       const [a, b, c] = combo;
       const values = [board[a], board[b], board[c]];
       const oCount = values.filter(v => v === 'O').length;
@@ -102,7 +150,9 @@ export default function App() {
     let newMarks = isRobot ? [...robotMarks, index] : [...playerMarks, index];
     let otherMarks = isRobot ? playerMarks : robotMarks;
 
-    if (newMarks.length > 3) {
+    const wouldWin = checkWin(newBoard, symbol);
+
+    if (!wouldWin && newMarks.length > 3) {
       const toRemove = newMarks.shift();
       newBoard[toRemove] = null;
     }
@@ -260,7 +310,9 @@ export default function App() {
     newBoard[index] = symbol;
     let newMarks = [...myMarks, index];
 
-    if (newMarks.length > 3) {
+    const wouldWin = checkWin(newBoard, symbol);
+
+    if (!wouldWin && newMarks.length > 3) {
       const toRemove = newMarks.shift();
       newBoard[toRemove] = null;
     }
@@ -298,7 +350,10 @@ export default function App() {
     newBoard[bestMove] = 'O';
 
     let newOppMarks = [...opponentMarks, bestMove];
-    if (newOppMarks.length > 3) {
+
+    const wouldWin = checkWin(newBoard, 'O');
+
+    if (!wouldWin && newOppMarks.length > 3) {
       const toRemove = newOppMarks.shift();
       newBoard[toRemove] = null;
     }
@@ -312,10 +367,28 @@ export default function App() {
     setOpponentMarks(newOppMarks);
   };
 
+  const handleModeSelection = selectedMode => {
+    if (selectedMode === 'online') {
+      setMode(selectedMode);
+    } else {
+      setPendingMode(selectedMode);
+      setShowGridSelection(true);
+    }
+  };
+
+  const handleGridSizeSelection = size => {
+    setGridSize(size);
+    setMode(pendingMode);
+    setShowGridSelection(false);
+    setPendingMode(null);
+  };
+
   const handleBack = () => {
     socket.disconnect();
     socket.connect();
     setMode(null);
+    setShowGridSelection(false);
+    setPendingMode(null);
     resetGame();
     setRoomCode('');
     setInputRoom('');
@@ -389,7 +462,10 @@ export default function App() {
       newBoard[index] = opp;
 
       let newOppMarks = [...opponentMarksRef.current, index];
-      if (newOppMarks.length > 3) {
+
+      const wouldWin = checkWin(newBoard, opp);
+
+      if (!wouldWin && newOppMarks.length > 3) {
         const toRemove = newOppMarks.shift();
         newBoard[toRemove] = null;
       }
@@ -433,7 +509,7 @@ export default function App() {
     };
 
     const handleKickAll = () => {
-      handleBack(); 
+      handleBack();
       setNotification('A player disconnected. The room has been closed.');
     };
 
@@ -445,7 +521,7 @@ export default function App() {
     socket.on('receiveMessage', handleReceiveMessage);
     socket.on('errorMsg', handleErrorMsg);
     socket.on('restartGame', handleRestartGame);
-    socket.on('opponentLeft', handleOpponentLeft); 
+    socket.on('opponentLeft', handleOpponentLeft);
     socket.on('kickAll', handleKickAll);
 
     return () => {
@@ -457,34 +533,65 @@ export default function App() {
       socket.off('receiveMessage', handleReceiveMessage);
       socket.off('errorMsg', handleErrorMsg);
       socket.off('restartGame', handleRestartGame);
-      socket.off('opponentLeft', handleOpponentLeft); 
+      socket.off('opponentLeft', handleOpponentLeft);
       socket.off('kickAll', handleKickAll);
     };
   }, []);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center text-white bg-zinc-900 p-6">
-      {!mode && (
+      {!mode && !showGridSelection && (
         <div className="space-y-4 space-x-4">
           <h1 className="text-4xl mb-6 text-cyan-400">Infinite Tic Tac Toe</h1>
           <button
-            onClick={() => setMode('robot')}
+            onClick={() => handleModeSelection('robot')}
             className="px-6 py-3 bg-red-500 text-white rounded w-64 hover:bg-red-400 transition-colors font-semibold"
           >
             Play vs Robot 🤖
           </button>
           <button
-            onClick={() => setMode('local')}
+            onClick={() => handleModeSelection('local')}
             className="px-6 py-3 bg-pink-400 text-black rounded w-64 hover:bg-pink-300 transition-colors"
           >
             Play vs Friend (Same Device)
           </button>
           <button
-            onClick={() => setMode('online')}
+            onClick={() => handleModeSelection('online')}
             className="px-6 py-3 bg-yellow-400 text-black rounded w-64 hover:bg-yellow-300 transition-colors"
           >
             Play Online
           </button>
+        </div>
+      )}
+
+      {showGridSelection && (
+        <div className="space-y-4">
+          <button
+            onClick={handleBack}
+            className="absolute top-4 left-4 px-4 py-2 bg-gray-700 rounded hover:bg-gray-600 transition-colors"
+          >
+            ⬅ Back
+          </button>
+          <h2 className="text-3xl mb-6 text-cyan-400">Choose Grid Size</h2>
+          <div className="space-y-4 space-x-4">
+            <button
+              onClick={() => handleGridSizeSelection(3)}
+              className="px-6 py-3 bg-blue-500 text-white rounded w-64 hover:bg-blue-400 transition-colors font-semibold"
+            >
+              3x3 Grid (Classic)
+            </button>
+            <button
+              onClick={() => handleGridSizeSelection(4)}
+              className="px-6 py-3 bg-purple-500 text-white rounded w-64 hover:bg-purple-400 transition-colors font-semibold"
+            >
+              4x4 Grid (Extended)
+            </button>
+          </div>
+          <p className="text-gray-400 text-sm mt-4 text-center max-w-md">
+            In both modes, you still need to get 3 in a row to win. <br />
+            After placing 3 marks, your oldest mark will be removed when you
+            place a new one.
+          </p>
         </div>
       )}
 
@@ -545,7 +652,15 @@ export default function App() {
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-3 mt-8">
+          <div className="mt-4 text-center text-sm text-gray-400">
+            {gridSize}x{gridSize} Grid - Get 3 in a row to win!
+          </div>
+
+          <div
+            className={`grid gap-2 mt-8 ${
+              gridSize === 3 ? 'grid-cols-3' : 'grid-cols-4'
+            }`}
+          >
             {board.map((cell, i) => {
               const nextRemove = myMarks[0];
               const oppRemove = opponentMarks[0];
@@ -559,7 +674,11 @@ export default function App() {
                 <div
                   key={i}
                   onClick={() => handleMove(i)}
-                  className={`w-24 h-24 border-2 flex items-center justify-center text-4xl rounded-md cursor-pointer transition-all ${
+                  className={`${
+                    gridSize === 3 ? 'w-24 h-24' : 'w-20 h-20'
+                  } border-2 flex items-center justify-center ${
+                    gridSize === 3 ? 'text-4xl' : 'text-3xl'
+                  } rounded-md cursor-pointer transition-all ${
                     isRemove
                       ? 'animate-pulse border-pink-500 bg-pink-900/20'
                       : 'border-cyan-400 hover:border-cyan-300 hover:bg-cyan-900/20'
